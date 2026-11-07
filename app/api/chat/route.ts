@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import experimentConfig from "@/scripts/experiment_config.json";
 
 // ==============================================================================
-// (주)슬리피 공식 승인 21개 FAQ 지식 베이스 (Vercel Serverless 단독 실행 보장)
+// (주)슬리피 공식 승인 21개 FAQ 지식 베이스
 // ==============================================================================
 interface FaqItem {
   faq_id: string;
@@ -205,7 +206,6 @@ const FAQ_KNOWLEDGE_BASE: FaqItem[] = [
   }
 ];
 
-// R02 Sources Schema
 export interface SourceItem {
   document_id: string;
   title: string;
@@ -213,7 +213,6 @@ export interface SourceItem {
   location: string | null;
 }
 
-// R02 Chat Response Schema
 export interface ChatResponse {
   status: "answered" | "clarification_needed" | "insufficient_context" | "support_required";
   answer: string;
@@ -226,10 +225,12 @@ export interface ChatResponse {
 const OFFICIAL_SUPPORT_URL = "https://sleeby.channel.io";
 
 /**
- * 키워드 및 의도 분석을 통한 RAG 지식 매칭 함수 (Vercel 프로토타입 시연용 고정밀 로컬 매칭 엔진)
+ * scripts/experiment_config.json 설정을 반영한 지능형 RAG 검색 및 출처 랭킹 엔진
  */
 function searchFaq(query: string) {
   const cleanQuery = query.toLowerCase().trim();
+  const topK = experimentConfig.top_k || 3;
+  const strategy = experimentConfig.search_strategy || "hybrid";
 
   // 1. 고객지원/상담 필요 (support_required) 키워드
   const supportKeywords = ["환불", "교환", "반품", "결제", "배송", "주문 취소", "as 접수", "수리", "영수증", "불량 교환"];
@@ -238,6 +239,7 @@ function searchFaq(query: string) {
       type: "support_required" as const,
       answer: "교환·환불·배송 및 AS 등 개별 주문 정보 확인이 필요한 문의입니다. 신속하고 정확한 처리를 위해 (주)슬리피 공식 고객지원 채널로 문의해 주시기 바랍니다.",
       support_url: OFFICIAL_SUPPORT_URL,
+      sources: [] as SourceItem[],
     };
   }
 
@@ -256,43 +258,65 @@ function searchFaq(query: string) {
       type: "clarification_needed" as const,
       answer: "어떤 내용에 관한 문의인지 조금 더 구체적으로 확인이 필요합니다.",
       follow_up_question: "사용 중인 상황이나 구체적으로 궁금하신 부분(예: 착용 방법, 충전 LED, 보관법 등)을 알려주시겠어요?",
+      sources: [] as SourceItem[],
     };
   }
 
-  // 3. 21개 FAQ 데이터 매칭 점수 계산
-  let bestMatch: FaqItem | null = null;
-  let highestScore = 0;
+  // 3. 실험 파라미터(hybrid/dense/sparse)를 반영한 다중 후보 점수 채점 및 Top-K 추출
+  const scoredItems: { item: FaqItem; score: number }[] = [];
+  const tokens = cleanQuery.split(/\s+/).filter((t) => t.length > 1);
 
   for (const item of FAQ_KNOWLEDGE_BASE) {
     let score = 0;
     const lowerQ = item.question.toLowerCase();
     const lowerA = item.answer.toLowerCase();
 
-    // 키워드 일치 점수
+    // 키워드 일치 점수 (Sparse/BM25 요소)
+    let keywordScore = 0;
     for (const kw of item.keywords) {
       if (cleanQuery.includes(kw.toLowerCase())) {
-        score += 8;
+        keywordScore += 8;
       }
     }
 
-    // 질의어 핵심 토큰 포함 점수
-    const tokens = cleanQuery.split(/\s+/).filter((t) => t.length > 1);
+    // 질의어 토큰 매칭 점수 (Dense 의미적 유사도 시뮬레이션)
+    let tokenScore = 0;
     for (const token of tokens) {
-      if (lowerQ.includes(token)) score += 5;
-      if (lowerA.includes(token)) score += 2;
+      if (lowerQ.includes(token)) tokenScore += 5;
+      if (lowerA.includes(token)) tokenScore += 2;
     }
 
-    if (score > highestScore) {
-      highestScore = score;
-      bestMatch = item;
+    if (strategy === "sparse") {
+      score = keywordScore * 1.5;
+    } else if (strategy === "dense") {
+      score = tokenScore * 1.8;
+    } else {
+      // hybrid (기본 권장)
+      score = keywordScore + tokenScore;
+    }
+
+    if (score >= 5) {
+      scoredItems.push({ item, score });
     }
   }
 
-  // 임계값(Threshold) 검사: 점수가 일정 수준 이상이면 answered, 미만이면 insufficient_context
-  if (bestMatch && highestScore >= 5) {
+  // 점수 내림차순 정렬 후 Top-K 추출
+  scoredItems.sort((a, b) => b.score - a.score);
+  const topMatches = scoredItems.slice(0, topK);
+
+  if (topMatches.length > 0) {
+    const best = topMatches[0].item;
+    const sources: SourceItem[] = topMatches.map((m) => ({
+      document_id: m.item.document_id,
+      title: `${m.item.faq_id}. ${m.item.title}`,
+      faq_id: m.item.faq_id,
+      location: m.item.category,
+    }));
+
     return {
       type: "answered" as const,
-      faq: bestMatch,
+      faq: best,
+      sources,
     };
   }
 
@@ -300,6 +324,7 @@ function searchFaq(query: string) {
   return {
     type: "insufficient_context" as const,
     answer: "현재 확인 가능한 공식 안내 자료에서는 해당 내용을 확인하지 못했습니다. 상세한 확인이 필요하신 경우 공식 고객지원 채널로 문의해 주세요.",
+    sources: [] as SourceItem[],
   };
 }
 
@@ -329,7 +354,7 @@ export async function POST(req: NextRequest) {
         answer: searchResult.answer,
         sources: [],
         needs_support: true,
-        support_url: searchResult.support_url,
+        support_url: searchResult.support_url || OFFICIAL_SUPPORT_URL,
         follow_up_question: null,
       };
       return NextResponse.json(response, { status: 200 });
@@ -342,17 +367,18 @@ export async function POST(req: NextRequest) {
         sources: [],
         needs_support: false,
         support_url: null,
-        follow_up_question: searchResult.follow_up_question,
+        follow_up_question: searchResult.follow_up_question || null,
       };
       return NextResponse.json(response, { status: 200 });
     }
 
     if (searchResult.type === "answered" && searchResult.faq) {
       const faq = searchResult.faq;
+      // R02_STRICT 지침: 엄격한 경어체 및 출처 태그 포맷 준수
       const response: ChatResponse = {
         status: "answered",
         answer: `${faq.answer} [출처: ${faq.faq_id}. ${faq.title}]`,
-        sources: [
+        sources: searchResult.sources || [
           {
             document_id: faq.document_id,
             title: `${faq.faq_id}. ${faq.title}`,

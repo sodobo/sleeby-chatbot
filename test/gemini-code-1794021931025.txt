@@ -1,0 +1,29 @@
+너는 (주)슬리피 AI 고객상담 챗봇 프로젝트의 리드 개발자야.
+우리가 구축한 R02 API 명세 기반 풀스택 챗봇을 바탕으로, 실행 테스트, 평가 리포트 자동화, 최적화 실험 파라미터 파일 및 최종 배포 가이드를 완성해 줘.
+
+[1. 추가 생성할 파일 및 폴더 구조]
+- docs/EVALUATION_REPORT.md (20~30개 벤치마크 평가 결과 보고서 양식 및 샘플 결과)
+- scripts/experiment_config.json (Chunk Size, Overlap, Hybrid/Dense 검색 전략, Top-K 등 실험 파라미터 설정 파일)
+- app/api/chat/route.ts (실험 설정 파일 experiment_config.json 및 R02 규격을 반영한 백엔드 API 보완)
+
+[2. experiment_config.json 파라미터 노출]
+다음 변수를 포함하여 팀원들이 이 파일만 수정하면 검색 전략을 테스트할 수 있게 해줘:
+{
+  "chunk_size": 500,
+  "chunk_overlap": 50,
+  "embedding_model": "text-embedding-3-small",
+  "search_strategy": "hybrid",
+  "top_k": 3,
+  "use_reranker": false,
+  "system_prompt_version": "R02_STRICT"
+}
+
+[3. docs/EVALUATION_REPORT.md 작성]
+- 대표 질문 10종 및 정답/부분정답/오답/근거없음 분류 결과 자동 기록용 표 작성
+- R02 명세의 'status', 'sources', 'needs_support' 준수 여부 체크리스트 포함
+
+[4. 자동화 실행 및 파일 보완]
+- 터미널 설치 명령어에서 지연이 생기면 강제 취소하고 파일 생성/업데이트를 우선 마무리할 것
+- 모든 파일 작성이 끝나면 Vercel 최신 배포 반영 및 GitHub push 커밋 메시지("feat: Add R02 evaluation report & RAG experiment configs")를 준비해 줘.
+
+지금 즉시 실행해 줘.

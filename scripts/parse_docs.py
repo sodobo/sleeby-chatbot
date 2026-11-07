@@ -3,23 +3,43 @@
 """
 (주)슬리피 RAG 파이프라인 - 문서 파싱 및 Chunking 실험 스크립트
 '11.07 RAG 개인/공통 가이드라인' 준수:
-팀원 각자가 아래 파라미터를 변경하여 Chunking 및 검색 전략을 비교 실험할 수 있습니다.
+scripts/experiment_config.json 파일의 설정을 자동으로 반영하여 팀원별 실험을 지원합니다.
 """
 
 import os
 import json
 
-# ==============================================================================
-# [개인별 RAG 실험 파라미터 조절 영역]
-# ==============================================================================
-CHUNK_SIZE = 500             # 청크 글자 수 (예: 200, 300, 500, 1000)
-CHUNK_OVERLAP = 50           # 인접 청크 간 중복 글자 수 (예: 0, 30, 50, 100)
-EMBEDDING_MODEL = "text-embedding-3-small"  # 임베딩 모델 (예: text-embedding-3-small, text-embedding-3-large)
-SEARCH_STRATEGY = "hybrid"   # 검색 전략: "dense", "sparse", "hybrid"
-# ==============================================================================
-
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CONFIG_PATH = os.path.join(BASE_DIR, "scripts", "experiment_config.json")
 OUTPUT_DIR = os.path.join(BASE_DIR, "data")
+
+# 기본 설정 (experiment_config.json이 없을 경우 폴백)
+DEFAULT_CONFIG = {
+    "chunk_size": 500,
+    "chunk_overlap": 50,
+    "embedding_model": "text-embedding-3-small",
+    "search_strategy": "hybrid",
+    "top_k": 3,
+    "use_reranker": False,
+    "system_prompt_version": "R02_STRICT"
+}
+
+def load_config():
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+                return {**DEFAULT_CONFIG, **cfg}
+        except Exception as e:
+            print(f"[!] config 로드 실패, 기본값 사용: {e}")
+    return DEFAULT_CONFIG
+
+CONFIG = load_config()
+CHUNK_SIZE = CONFIG["chunk_size"]
+CHUNK_OVERLAP = CONFIG["chunk_overlap"]
+EMBEDDING_MODEL = CONFIG["embedding_model"]
+SEARCH_STRATEGY = CONFIG["search_strategy"]
+
 OUTPUT_JSON = os.path.join(OUTPUT_DIR, f"faq_chunks_{SEARCH_STRATEGY}_{CHUNK_SIZE}_{CHUNK_OVERLAP}.json")
 OUTPUT_JSONL = os.path.join(OUTPUT_DIR, f"faq_chunks_{SEARCH_STRATEGY}_{CHUNK_SIZE}_{CHUNK_OVERLAP}.jsonl")
 
@@ -216,9 +236,7 @@ RAW_FAQ_LIST = [
     }
 ]
 
-
 def chunk_text(text: str, chunk_size: int, chunk_overlap: int):
-    """슬라이딩 윈도우 기반 텍스트 분할 (Chunking) 함수"""
     if len(text) <= chunk_size:
         return [text]
     chunks = []
@@ -232,15 +250,14 @@ def chunk_text(text: str, chunk_size: int, chunk_overlap: int):
         start += chunk_size - chunk_overlap
     return chunks
 
-
 def build_chunks(faq_list):
-    """FAQ 원본 데이터를 지정된 파라미터로 청킹하고 메타데이터를 보존하는 파이프라인"""
     all_chunks = []
-    print(f"[*] FAQ {len(faq_list)}개 항목 파싱 및 청킹 시작...")
+    print(f"[*] FAQ {len(faq_list)}개 항목 파싱 및 청킹 시작 (설정 파일: {CONFIG_PATH})")
     print(f"    - CHUNK_SIZE: {CHUNK_SIZE}")
     print(f"    - CHUNK_OVERLAP: {CHUNK_OVERLAP}")
     print(f"    - EMBEDDING_MODEL: {EMBEDDING_MODEL}")
     print(f"    - SEARCH_STRATEGY: {SEARCH_STRATEGY}")
+    print(f"    - TOP_K: {CONFIG.get('top_k', 3)}")
 
     for item in faq_list:
         full_content = (
@@ -269,11 +286,8 @@ def build_chunks(faq_list):
 
     return all_chunks
 
-
 def save_chunks(chunks):
-    """결과 JSON 및 JSONL 저장"""
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-
     with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
         json.dump(chunks, f, ensure_ascii=False, indent=2)
 
@@ -284,7 +298,6 @@ def save_chunks(chunks):
     print(f"[+] 총 {len(chunks)}개 청크 생성 완료!")
     print(f"    - JSON 저장: {OUTPUT_JSON}")
     print(f"    - JSONL 저장: {OUTPUT_JSONL}")
-
 
 if __name__ == "__main__":
     chunks = build_chunks(RAW_FAQ_LIST)
