@@ -131,3 +131,26 @@ npm install
 npm run dev
 ```
 브라우저에서 [http://localhost:3000](http://localhost:3000)으로 접속하여 챗봇을 테스트할 수 있습니다.
+
+---
+
+## 🤝 팀 공통 저장소(Team Repository) 통합 및 PR 가이드
+
+현재 개인 저장소(`sodobo/sleeby-chatbot`)의 `chatbot-so` 브랜치에서 독립적으로 개발 중이며, 향후 팀 공식 저장소 권한이 승인되었을 때 충돌 없이 1분 만에 통합할 수 있도록 준비되어 있습니다.
+
+### 📌 방법 1: 팀 저장소에 원격 브랜치로 직접 푸시 (가장 간편)
+팀 저장소 생성이 완료되면 아래 2줄의 명령어로 본인의 `chatbot-so` 브랜치를 팀 저장소로 바로 전송할 수 있습니다:
+```bash
+# 1. 팀 공식 저장소를 'team' 원격으로 추가
+git remote add team https://github.com/팀조직명/팀저장소명.git
+
+# 2. 내 chatbot-so 브랜치를 팀 저장소로 푸시
+git push team chatbot-so
+```
+푸시 후 GitHub 웹 화면에서 팀 저장소의 `main` 브랜치로 **[Compare & pull request]**를 클릭하여 코드 리뷰 후 안전하게 머지(Merge)하시면 됩니다.
+
+### 📌 방법 2: 개인 저장소에서 팀 저장소로 Fork & Pull Request
+1. 팀 공식 저장소 화면 우측 상단의 **[Fork]** 버튼을 클릭하여 본인 계정으로 연동합니다.
+2. 본인의 `chatbot-so` 브랜치에서 팀 공식 저장소의 `main` 브랜치 방향으로 Pull Request를 요청합니다.
+3. 모든 파일이 상대 경로(`@/data/...`)로 작성되어 있고 로컬 절대 경로가 전혀 없으므로, 팀 공통 환경에서도 100% 충돌 없이 병합됩니다.
+
