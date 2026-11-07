@@ -80,3 +80,19 @@
 2. **모호한 제품 문의:** "빨간불 반짝임", "거치대형/밴드형 호환"처럼 공식 자료만으로 상황을 특정할 수 없는 질문은 `clarification_needed`와 `follow_up_question`으로 되묻습니다.
 3. **검색 임계값:** `scripts/experiment_config.json`의 `similarity_threshold`(0.7) 미만의 검색 결과는 근거로 사용하지 않습니다.
 4. **자동 검증:** `python scripts/eval_benchmark.py` 실행 시 QA 10대 시나리오와 25개 회귀 질문이 채점되어 `docs/EVALUATION_REPORT.md`에 기록됩니다.
+
+---
+
+## 6. 응답 속도 · 상담 연결 · 세션 규칙
+1. **응답 속도:** `use_intent_router`가 켜져 있으면 인사말·환불/AS 요청은 검색 없이 즉시(1초 이내) 처리합니다. Multi-Query는 원본/확장 질의를 `Promise.all`로 병렬 검색하여 2초 이내로 응답하며, 유사도 `similarity_threshold`(0.7) 미만 문서는 자동 제외(가지치기)합니다. 응답 헤더 `X-Response-Time-Ms`로 서버 처리 시간을 확인할 수 있습니다.
+2. **1:1 상담 연결 UI:** `status`가 `support_required` 또는 `insufficient_context`이면 화면에 "예상 대기 시간: 약 3~5분", 전화번호 입력 폼([전화 상담 신청], `POST /api/callback`), [카카오톡 1:1 상담 연결] 버튼, 공식 고객지원 링크를 표시합니다. 카카오톡 채널 URL은 임의로 만들지 않고 환경변수 `NEXT_PUBLIC_KAKAO_CHANNEL_URL`로만 설정합니다(미설정 시 버튼 비활성). 전화번호는 저장·로그 기록하지 않습니다(프로토타입 접수 응답만 반환).
+3. **대화 초기화:** [대화 초기화] 클릭 시 "대화 내역을 모두 지우시겠습니까?" 확인 모달을 띄우고, [확인]을 눌렀을 때만 sessionStorage와 대화 state를 초기화합니다.
+4. **세션/히스토리:**
+   - 대화는 `sessionStorage`에만 저장하여 탭/창을 닫으면 자동 삭제됩니다.
+   - 같은 IP의 여러 사용자를 구분하기 위해 브라우저 탭마다 `session_id`(UUID)를 생성해 요청 본문과 `X-Session-Id` 헤더로 전달합니다.
+   - LLM context에는 최근 **10개** 메시지(Sliding Window)만 전달하며, 서버도 동일하게 10개로 제한합니다(`lib/session.ts`).
+5. **다중 제품 컨텍스트:** 문의 제품은 배열로 독립 관리합니다.
+   ```json
+   "context_user": { "user_name": null, "active_products": ["밴드형", "거치대형"] }
+   ```
+   사용자 발화에서 제품명(밴드형/거치대형)이 감지될 때마다 중복 없이 누적하며, 제품명이 없고 사용법이 제품별로 다를 수 있는 질문은 §5의 `clarification_needed` 규칙을 따릅니다.

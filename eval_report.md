@@ -51,8 +51,11 @@
 | QA-08 | 공백 입력 | HTTP 400 / EMPTY_MESSAGE | HTTP 400 / EMPTY_MESSAGE | **PASS** | [api] |
 | QA-09 | 대화 초기화(reset) | reset 핸들러+버튼 | 핸들러 True / 버튼 True | **PASS** | app/page.tsx 정적 검사 (메시지·입력 초기화) |
 | QA-10 | 모바일 UI 응답 규격 | R02 6필드 + 반응형 UI | 규격 OK / 반응형 True | **PASS** | [api] 응답 6필드 및 app/page.tsx 반응형 클래스 검사 |
+| QA-12 | 1:1 상담 연결 UI(대기시간/전화/카카오톡) | UI 요소 + 잘못된 번호 400 | UI True / 콜백API True / 잘못된 번호 HTTP 400 | **PASS** | [api] app/page.tsx, app/api/callback/route.ts |
+| QA-13 | 세션 ID·10개 Sliding Window·다중 제품 | 정적 검사 | True | **PASS** | lib/session.ts, app/page.tsx |
+| QA-14 | 응답 지연(인사·상담 <1s, Multi-Query <2s) | 모두 기준 이내 | 인사말 24ms, 상담 요청 26ms, Multi-Query 27ms | **PASS** | [api] |
 
-> ✅ **QA 시나리오 통과: 11/11**
+> ✅ **QA 시나리오 통과: 14/14**
 
 ---
 

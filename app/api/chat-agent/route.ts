@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import experimentConfig from "@/scripts/experiment_config.json";
+import { normalizeRequestContext } from "@/lib/session";
 
 // ==============================================================================
 // 1. (주)슬리피 공식 승인 21개 FAQ 지식 베이스
@@ -443,8 +444,15 @@ export async function POST(req: NextRequest) {
     }
 
     const { message } = body;
+    const startedAt = Date.now();
     const agentResponse = runAgentDecision(message);
-    return NextResponse.json(agentResponse, { status: 200 });
+    const ctx = normalizeRequestContext(body); // session_id · 최근 10개 히스토리 · context_user
+    const headers: Record<string, string> = {
+      "X-Response-Time-Ms": String(Date.now() - startedAt),
+      "X-History-Window": String(ctx.history.length),
+    };
+    if (ctx.session_id) headers["X-Session-Id"] = ctx.session_id;
+    return NextResponse.json(agentResponse, { status: 200, headers });
   } catch (error) {
     return NextResponse.json(
       {

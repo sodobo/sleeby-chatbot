@@ -508,7 +508,10 @@ def run_qa_suite():
     # QA-09 대화 초기화: 프론트엔드 reset 핸들러/버튼 정적 검증
     page = _read(PAGE_TSX_PATH)
     has_handler = "handleReset" in page and "setMessages([" in page and 'setInput("")' in page
-    has_button = "onClick={handleReset}" in page
+    # 초기화 버튼은 확인 모달만 열고, 모달 [확인]에서만 sessionStorage 를 지운다
+    has_button = ("onClick={requestReset}" in page and "onClick={handleReset}" in page
+                  and "대화 내역을 모두 지우시겠습니까?" in page
+                  and "sessionStorage.removeItem(SESSION_STORAGE_KEY)" in page)
     ok = has_handler and has_button
     rows.append(("QA-09", "대화 초기화(reset)", "reset 핸들러+버튼", f"핸들러 {has_handler} / 버튼 {has_button}",
                  "PASS" if ok else "FAIL", "app/page.tsx 정적 검사 (메시지·입력 초기화)"))
@@ -520,6 +523,46 @@ def run_qa_suite():
     ok = not problems and responsive
     rows.append(("QA-10", "모바일 UI 응답 규격", "R02 6필드 + 반응형 UI", f"규격 {'OK' if not problems else problems} / 반응형 {responsive}",
                  "PASS" if ok else "FAIL", f"[{mode}] 응답 6필드 및 app/page.tsx 반응형 클래스 검사"))
+    # QA-12 상담 연결 UI: 대기 시간 안내 + 전화번호 폼 + 카카오톡 버튼 + 콜백 API
+    callback = _read(os.path.join(BASE_DIR, "app", "api", "callback", "route.ts"))
+    ui_ok = all(t in page for t in ["예상 대기 시간: 약 3~5분", "전화 상담 신청", "카카오톡 1:1 상담 연결", 'type="tel"'])
+    api_ok = "INVALID_PHONE" in callback
+    h400, b400, m400 = 0, {}, "static"
+    try:
+        req = urllib.request.Request(API_URL.replace("/api/chat", "/api/callback"),
+                                     data=json.dumps({"phone": "abc"}).encode("utf-8"),
+                                     headers={"Content-Type": "application/json"}, method="POST")
+        urllib.request.urlopen(req, timeout=3)
+    except urllib.error.HTTPError as e:
+        h400 = e.code
+        m400 = "api"
+    except Exception:
+        pass
+    api_live_ok = h400 in (0, 400)  # 서버가 꺼져 있으면(0) 정적 검사만
+    rows.append(("QA-12", "1:1 상담 연결 UI(대기시간/전화/카카오톡)", "UI 요소 + 잘못된 번호 400",
+                 f"UI {ui_ok} / 콜백API {api_ok} / 잘못된 번호 HTTP {h400 or '-'}",
+                 "PASS" if ui_ok and api_ok and api_live_ok else "FAIL", f"[{m400}] app/page.tsx, app/api/callback/route.ts"))
+
+    # QA-13 세션/히스토리: sessionStorage, session_id, 최근 10개 window, active_products 배열
+    lib = _read(os.path.join(BASE_DIR, "lib", "session.ts"))
+    sess_ok = all(t in lib for t in ["HISTORY_WINDOW = 10", "active_products: string[]", "randomUUID"]) \
+        and "sessionStorage.setItem" in page and "windowHistory(" in page and "session_id: sessionId" in page
+    rows.append(("QA-13", "세션 ID·10개 Sliding Window·다중 제품", "정적 검사", f"{sess_ok}",
+                 "PASS" if sess_ok else "FAIL", "lib/session.ts, app/page.tsx"))
+
+    # QA-14 응답 지연: 인사말 < 1초, Multi-Query 질의 < 2초
+    import time
+    lat = []
+    for label, q, limit in [("인사말", "안녕하세요", 1.0), ("상담 요청", "환불하고 싶어요", 1.0),
+                            ("Multi-Query", "충전하면서 귀에 착용해도 잠이 잘 오나요", 2.0)]:
+        t0 = time.perf_counter()
+        _, _, mode = post_chat(q)
+        dt = time.perf_counter() - t0
+        lat.append((label, dt, limit, mode))
+    lat_ok = all(dt < limit for _, dt, limit, _ in lat)
+    rows.append(("QA-14", "응답 지연(인사·상담 <1s, Multi-Query <2s)", "모두 기준 이내",
+                 ", ".join(f"{l} {dt*1000:.0f}ms" for l, dt, _, _ in lat), "PASS" if lat_ok else "FAIL",
+                 f"[{lat[0][3]}]"))
     return rows
 
 

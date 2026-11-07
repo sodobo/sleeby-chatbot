@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import experimentConfig from "@/scripts/experiment_config.json";
+import { normalizeRequestContext } from "@/lib/session";
 
 // ==============================================================================
 // (주)슬리피 공식 승인 21개 FAQ 지식 베이스
@@ -230,14 +231,15 @@ const OFFICIAL_SUPPORT_URL ="https://sleeby.channel.io";
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Session-Id",
+  "Access-Control-Expose-Headers": "X-Response-Time-Ms, X-Session-Id, X-History-Window",
   "Content-Type": "application/json; charset=utf-8",
 };
 
 /**
  * experiment_config.json 설정(use_intent_router, use_multi_query, search_strategy, top_k)을 실시간 반영한 RAG 검색 엔진
  */
-function searchFaq(query: string) {
+async function searchFaq(query: string) {
   const cleanQuery = query.toLowerCase().trim();
   const topK = experimentConfig.top_k || 3;
   const strategy = experimentConfig.search_strategy || "hybrid";
@@ -318,44 +320,50 @@ function searchFaq(query: string) {
     }
   }
 
-  // 2. 멀티 쿼리(use_multi_query) 확장 토큰 시뮬레이션
-  let tokens = cleanQuery.split(/\s+/).filter((t) => t.length > 1);
+  // 2. 멀티 쿼리(use_multi_query): 원본 질의 + 확장 질의를 병렬(Promise.all)로 검색한 뒤 문서별 최고 점수로 병합
+  const baseTokens = cleanQuery.split(/\s+/).filter((t) => t.length > 1);
+  const queryVariants: string[][] = [baseTokens];
   if (useMultiQuery) {
-    if (cleanQuery.includes("충전")) tokens.push("led", "케이블", "배터리");
-    if (cleanQuery.includes("잠")) tokens.push("수면", "음향", "30분");
-    if (cleanQuery.includes("귀")) tokens.push("이어팁", "착용", "소음");
+    const expanded = [...baseTokens];
+    if (cleanQuery.includes("충전")) expanded.push("led", "케이블", "배터리");
+    if (cleanQuery.includes("잠")) expanded.push("수면", "음향", "30분");
+    if (cleanQuery.includes("귀")) expanded.push("이어팁", "착용", "소음");
+    if (expanded.length > baseTokens.length) queryVariants.push(expanded);
   }
 
-  // 3. 지식 베이스 검색 및 가중치 채점 (Dense/Sparse/Hybrid)
-  const scoredItems: { item: FaqItem; score: number }[] = [];
+  // 3. 지식 베이스 검색 및 가중치 채점 (Dense/Sparse/Hybrid) — 변형 질의별 병렬 실행
+  const scoreVariant = async (tokens: string[]) => {
+    const scores = new Map<string, number>();
+    for (const item of FAQ_KNOWLEDGE_BASE) {
+      const lowerQ = item.question.toLowerCase();
+      const lowerA = item.answer.toLowerCase();
 
-  for (const item of FAQ_KNOWLEDGE_BASE) {
-    let score = 0;
-    const lowerQ = item.question.toLowerCase();
-    const lowerA = item.answer.toLowerCase();
-
-    let keywordScore = 0;
-    for (const kw of item.keywords) {
-      if (cleanQuery.includes(kw.toLowerCase())) {
-        keywordScore += 8;
+      let keywordScore = 0;
+      for (const kw of item.keywords) {
+        if (cleanQuery.includes(kw.toLowerCase())) keywordScore += 8;
       }
-    }
 
-    let tokenScore = 0;
-    for (const token of tokens) {
-      if (lowerQ.includes(token)) tokenScore += 5;
-      if (lowerA.includes(token)) tokenScore += 2;
-    }
+      let tokenScore = 0;
+      for (const token of tokens) {
+        if (lowerQ.includes(token)) tokenScore += 5;
+        if (lowerA.includes(token)) tokenScore += 2;
+      }
 
-    if (strategy === "sparse") {
-      score = keywordScore * 1.5;
-    } else if (strategy === "dense") {
-      score = tokenScore * 1.8;
-    } else {
-      score = keywordScore + tokenScore;
+      let score: number;
+      if (strategy === "sparse") score = keywordScore * 1.5;
+      else if (strategy === "dense") score = tokenScore * 1.8;
+      else score = keywordScore + tokenScore;
+      scores.set(item.faq_id, score);
     }
+    return scores;
+  };
 
-    // similarity_threshold(0~1): 점수를 SCORE_FULL 기준으로 정규화한 유사도가 임계값 이상일 때만 근거로 채택
+  const variantScores = await Promise.all(queryVariants.map((t) => scoreVariant(t)));
+
+  // 4. 유사도 가지치기(pruning): similarity_threshold 미만 문서는 즉시 제외
+  const scoredItems: { item: FaqItem; score: number }[] = [];
+  for (const item of FAQ_KNOWLEDGE_BASE) {
+    const score = Math.max(...variantScores.map((m) => m.get(item.faq_id) ?? 0));
     const similarity = Math.min(1, score / SCORE_FULL);
     if (score >= 5 && similarity >= similarityThreshold) {
       scoredItems.push({ item, score });
@@ -413,7 +421,15 @@ export async function POST(req: NextRequest) {
     }
 
     const { message } = body;
-    const searchResult = searchFaq(message);
+    const startedAt = Date.now();
+    const searchResult = await searchFaq(message);
+    const ctx = normalizeRequestContext(body); // session_id · 최근 10개 히스토리(Sliding Window) · context_user
+    const meta: Record<string, string> = {
+      "X-Response-Time-Ms": String(Date.now() - startedAt),
+      "X-History-Window": String(ctx.history.length),
+    };
+    if (ctx.session_id) meta["X-Session-Id"] = ctx.session_id;
+    const RES_HEADERS = { ...CORS_HEADERS, ...meta };
 
     if (searchResult.type === "greeting") {
       const response: ChatResponse = {
@@ -424,7 +440,7 @@ export async function POST(req: NextRequest) {
         support_url: null,
         follow_up_question: null,
       };
-      return NextResponse.json(response, { status: 200, headers: CORS_HEADERS });
+      return NextResponse.json(response, { status: 200, headers: RES_HEADERS });
     }
 
     if (searchResult.type === "support_required") {
@@ -436,7 +452,7 @@ export async function POST(req: NextRequest) {
         support_url: searchResult.support_url || OFFICIAL_SUPPORT_URL,
         follow_up_question: null,
       };
-      return NextResponse.json(response, { status: 200, headers: CORS_HEADERS });
+      return NextResponse.json(response, { status: 200, headers: RES_HEADERS });
     }
 
     if (searchResult.type === "clarification_needed") {
@@ -448,7 +464,7 @@ export async function POST(req: NextRequest) {
         support_url: null,
         follow_up_question: searchResult.follow_up_question || null,
       };
-      return NextResponse.json(response, { status: 200, headers: CORS_HEADERS });
+      return NextResponse.json(response, { status: 200, headers: RES_HEADERS });
     }
 
     if (searchResult.type === "answered" && searchResult.faq) {
@@ -468,7 +484,7 @@ export async function POST(req: NextRequest) {
         support_url: null,
         follow_up_question: null,
       };
-      return NextResponse.json(response, { status: 200, headers: CORS_HEADERS });
+      return NextResponse.json(response, { status: 200, headers: RES_HEADERS });
     }
 
     const response: ChatResponse = {
@@ -479,7 +495,7 @@ export async function POST(req: NextRequest) {
       support_url: OFFICIAL_SUPPORT_URL,
       follow_up_question: null,
     };
-    return NextResponse.json(response, { status: 200, headers: CORS_HEADERS });
+    return NextResponse.json(response, { status: 200, headers: RES_HEADERS });
   } catch (error) {
     return NextResponse.json(
       {
