@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import {
   Send,
   RotateCcw,
@@ -182,8 +183,15 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* 모드 전환 탭 & 대화 초기화 버튼 */}
-        <div className="flex items-center gap-2">
+        {/* 맞춤 큐레이션 버튼 & 모드 전환 탭 & 대화 초기화 버튼 */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/curation"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-pastel-700 bg-pastel-50 hover:bg-pastel-100 border border-pastel-200 rounded-xl transition-all shadow-sm"
+          >
+            <span>🌙 내게 맞는 수면 제품 찾기</span>
+          </Link>
+
           <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/80">
             <button
               onClick={() => setChatMode("standard")}
