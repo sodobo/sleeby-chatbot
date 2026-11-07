@@ -3,7 +3,10 @@
   "chunk_overlap": 50,
   "embedding_model": "text-embedding-3-small",
   "search_strategy": "hybrid",
+  "similarity_threshold": 0.7,
   "top_k": 3,
   "use_reranker": false,
-  "system_prompt_version": "R02_STRICT"
+  "use_intent_router": true,
+  "use_multi_query": true,
+  "system_prompt_version": "R02_QA_VERIFIED"
 }

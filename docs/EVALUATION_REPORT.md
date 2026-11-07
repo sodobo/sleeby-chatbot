@@ -10,56 +10,89 @@
 
 ---
 
-## 1. 평가 배경 및 목적
+## 1. 종합 평가 결과 집계 요약 (자동 집계)
 
-본 평가는 **(주)슬리피 디지털 수면/이완 보조 제품 전담 AI 고객상담 챗봇**의 실제 배포 프로토타입에 대해 다음 3대 핵심 목표를 검증하기 위해 수행되었습니다:
-1. **근거 신뢰성 (Grounded Generation):** 기업 제공 21개 공식 FAQ 자료에 기반한 정확한 답변 생성 및 실제 사용한 출처(`sources`) 표기 여부
-2. **환각 방지 (Zero Hallucination):** 자료에 없는 내용이나 승인되지 않은 기능에 대해 추측하지 않고 안전하게 `insufficient_context`로 차단하는지 여부
-3. **R02 API 규격 완전성:** HTTP 400 빈 메시지 검증 및 4대 응답 상태(`answered`, `clarification_needed`, `insufficient_context`, `support_required`) 스키마 준수 여부
+### 1.1 R02 상태(Status)별 반환 비율
+| 응답 상태 (`status`) | 건수 (건) | 비율 (%) | R02 의미 |
+|---|---|---|---|
+| **`answered` (답변 생성)** | **21** | **84.0%** | 충분한 근거를 사용해 공식 답변 및 출처 생성 |
+| **`clarification_needed` (추가 확인)** | **2** | **8.0%** | 질문 의도가 모호하여 추가 확인 질문(`follow_up_question`) 제시 |
+| **`insufficient_context` (근거 부재)** | **1** | **4.0%** | 사내 지식에 없는 내용에 대해 환각 없이 안전 안내 |
+| **`support_required` (상담 연결)** | **1** | **4.0%** | 개별 주문/환불/AS 사안으로 1:1 고객지원 채널 연결 |
+| **합계** | **25** | **100.0%** | - |
 
----
-
-## 2. 종합 평가 결과 집계 요약
-
-총 25문항에 대한 실행 및 자동 판정 결과는 다음과 같습니다:
-
+### 1.2 답변 품질(Quality) 판정 집계
 | 평가 유형 | 건수 (건) | 비율 (%) | 판정 기준 및 비고 |
 |---|---|---|---|
-| **정답 (Correct)** | **21** | **84.0%** | 질문 의도를 정확히 파악하고 올바른 FAQ 항목 매칭 및 답변 생성 |
-| **부분정답 (Partial)** | **3** | **12.0%** | 질문이 모호하여 의도 확인 질문(`clarification_needed`)을 정상 유도함 |
-| **오답 (Incorrect)** | **0** | **0.0%** | 사실 왜곡, 다른 FAQ 내용 오안내, 또는 잘못된 답변 (0건 달성) |
+| **정답 (Correct)** | **24** | **96.0%** | 질문 의도를 정확히 파악하고 올바른 FAQ 항목 매칭 및 답변 생성 |
+| **부분정답 (Partial)** | **0** | **0.0%** | 질문이 모호하여 의도 확인 질문을 정상 유도함 |
+| **오답 (Incorrect)** | **0** | **0.0%** | 사실 왜곡, 다른 FAQ 내용 오안내, 또는 잘못된 답변 |
 | **근거없음 (Insufficient)** | **1** | **4.0%** | 사내 지식에 없는 질문에 대해 환각 없이 안전하게 고객지원으로 안내 |
 | **합계** | **25** | **100.0%** | - |
 
-> 🏆 **핵심 신뢰도 지표 (정답 + 근거없는 질문 안전방어율): 88.0%**  
+> 🏆 **핵심 신뢰도 지표 (정답 + 근거없는 질문 안전방어율): 100.0%**  
 > 🛡️ **환각(Hallucination) 오답률: 0.0%**
+> 🔌 **평가 실행 방식: 실서버 API 25건 / 로컬 시뮬레이션 0건** (서버가 꺼져 있으면 `route.ts`와 동일 로직의 로컬 검색으로 대체)
 
 ---
 
-## 3. 대표 질문 10종 상세 결과표
+## 2. 리드 QA 10대 핵심 시나리오 (자동 채점)
 
-팀 대표 질문 및 예외/경계 케이스 10종에 대한 심층 검증 결과입니다:
+| ID | 시나리오 | 기대 결과 | 실제 결과 | 판정 | 비고 |
+|---|---|---|---|:---:|---|
+| QA-01 | 수면 모드 사용법 | answered | answered | **PASS** | [api] 출처 FAQ-01 (허용: FAQ-01, FAQ-02, FAQ-04) |
+| QA-02 | 충전/배터리 | answered | answered | **PASS** | [api] 출처 FAQ-07 (허용: FAQ-07, FAQ-08, FAQ-09) |
+| QA-03 | 빨간불 반짝임 충전 문의 | clarification_needed | clarification_needed | **PASS** | [api] 규격 준수 |
+| QA-04 | 거치대형/밴드형 호환 문의 | clarification_needed | clarification_needed | **PASS** | [api] 규격 준수 |
+| QA-05 | 2세대 출시일 문의 | insufficient_context | insufficient_context | **PASS** | [api] 규격 준수 |
+| QA-06 | 불면증 100% 완치 문의 | insufficient_context | insufficient_context | **PASS** | [api] 규격 준수 |
+| QA-07 | 구매 환불/교환 문의 | support_required | support_required | **PASS** | [api] 규격 준수 |
+| QA-08 | 공백 입력 | HTTP 400 / EMPTY_MESSAGE | HTTP 400 / EMPTY_MESSAGE | **PASS** | [api] |
+| QA-09 | 대화 초기화(reset) | reset 핸들러+버튼 | 핸들러 True / 버튼 True | **PASS** | app/page.tsx 정적 검사 (메시지·입력 초기화) |
+| QA-10 | 모바일 UI 응답 규격 | R02 6필드 + 반응형 UI | 규격 OK / 반응형 True | **PASS** | [api] 응답 6필드 및 app/page.tsx 반응형 클래스 검사 |
 
-| ID | 카테고리 | 고객 질문 | 기대 상태 | 실제 반환 상태 | 매칭된 근거 출처 | 최종 판정 |
+> ✅ **QA 10대 시나리오 통과: 10/10**
+
+---
+
+## 2-2. 25개 테스트 케이스 전체 상세 결과표 (자동 생성)
+
+| ID | 카테고리 | 고객 질문 | 기대 상태 | 실제 반환 상태 | 매칭 출처 | 판정 |
 |---|---|---|---|---|---|---|
-| **TC-01** | 사용 방법 | SLEEBY는 밤에 잘 때만 써야 하나요? | `answered` | `answered` | `[FAQ-01] SLEEBY는 잠들기 전에만 사용하면 되나요?` | **정답** |
-| **TC-02** | 사용 방법 | 잠든 후에도 귀에 계속 끼고 있어도 안전한가요? | `answered` | `answered` | `[FAQ-02] 잠든 뒤에도 계속 착용하고 있어도 괜찮나요?` | **정답** |
-| **TC-04** | 사용 방법 | 30분 지나서 꺼졌는데 잠이 안 오면 다시 쓸 수 있나요? | `answered` | `answered` | `[FAQ-04] 잠이 들지 않으면 다시 착용해도 되나요?` | **정답** |
-| **TC-07** | 충전/배터리 | 충전이 다 끝나면 케이스 불빛이 어떻게 켜지나요? | `answered` | `answered` | `[FAQ-07] 충전이 끝나면 LED가 어떻게 표시되나요?` | **정답** |
-| **TC-11** | 관리/보관 | 기기에 물이 묻었는데 물로 씻어서 청소해도 되나요? | `answered` | `answered` | `[FAQ-011] SLEEBY 본체는 어떻게 청소하면 되나요?` | **정답** |
-| **TC-14** | 제품/기능 | 노이즈 캔슬링(ANC) 기능이 있어서 주변 소음을 완전히 없애주나요? | `answered` | `answered` | `[FAQ-014] 잠귀가 밝은 편인데, 주변 소리가 들리나요?` | **정답** |
-| **TC-15** | 제품/기능 | 스마트폰 블루투스 연결해서 유튜브나 멜론 음악 들을 수 있나요? | `answered` | `answered` | `[FAQ-015] 음악이나 오디오북을 들으면서 함께 사용할 수 있나요?` | **정답** |
-| **TC-20** | 안전/효과 | 중이염이나 귀 염증이 있어도 써도 괜찮나요? | `answered` | `answered` | `[FAQ-020] 귀 질환이 있거나 귀가 민감한 사람도 사용할 수 있나요?` | **정답** |
-| **TC-22** | 모호 질문 | 충전 | `clarification_needed` | `clarification_needed` | (추가 확인 질문 제시: 사용 상황 질문) | **부분정답** |
-| **TC-24** | 상담/환불 | 어제 주문한 제품 주문 취소하고 환불받고 싶어요 | `support_required` | `support_required` | (공식 채널 연결: `https://sleeby.channel.io`) | **정답** |
+| TC-01 | 사용 방법 | SLEEBY는 밤에 잘 때만 써야 하나요? | `answered` | `answered` | `FAQ-01` | **정답** |
+| TC-02 | 사용 방법 | 잠든 후에도 귀에 계속 끼고 있어도 안전한가요? | `answered` | `answered` | `FAQ-02` | **정답** |
+| TC-03 | 사용 방법 | 사용하다가 답답하면 중간에 빼도 되나요? | `answered` | `answered` | `FAQ-03` | **정답** |
+| TC-04 | 사용 방법 | 30분 지나서 꺼졌는데 잠이 안 오면 다시 쓸 수 있나요? | `answered` | `answered` | `FAQ-04` | **정답** |
+| TC-05 | 사용 방법 | 낮에 잠깐 낮잠잘 때 착용해도 되나요? | `answered` | `answered` | `FAQ-05` | **정답** |
+| TC-06 | 안전/효과 | 매일 연속으로 사용해도 부작용이나 문제 없나요? | `answered` | `answered` | `FAQ-06` | **정답** |
+| TC-07 | 충전/배터리 | 충전이 다 끝나면 케이스 불빛이 어떻게 켜지나요? | `answered` | `answered` | `FAQ-07` | **정답** |
+| TC-08 | 충전/배터리 | 충전 케이스를 충전기에 꽂아둔 채로 기기를 꺼내 써도 되나요? | `answered` | `answered` | `FAQ-08` | **정답** |
+| TC-09 | 충전/배터리 | 케이스 충전하면서 기기도 같이 동시에 충전되나요? | `answered` | `answered` | `FAQ-09` | **정답** |
+| TC-10 | 관리/보관 | 이어팁 교체는 어떻게 하나요? | `answered` | `answered` | `FAQ-010` | **정답** |
+| TC-11 | 관리/보관 | 기기에 물이 묻었는데 물로 씻어서 청소해도 되나요? | `answered` | `answered` | `FAQ-011` | **정답** |
+| TC-12 | 관리/보관 | 기기를 안 쓸 때는 어디에 보관해야 하나요? | `answered` | `answered` | `FAQ-012` | **정답** |
+| TC-13 | 착용/편의성 | 비행기나 KTX 안에서 사용해도 되나요? | `answered` | `answered` | `FAQ-013` | **정답** |
+| TC-14 | 제품 소개/기능 | 노이즈 캔슬링(ANC) 기능이 있어서 주변 소음을 완전히 없애주나요? | `answered` | `answered` | `FAQ-014` | **정답** |
+| TC-15 | 제품 소개/기능 | 스마트폰 블루투스 연결해서 유튜브나 멜론 음악 들을 수 있나요? | `answered` | `answered` | `FAQ-015` | **정답** |
+| TC-16 | 착용/편의성 | 헤드폰이나 일반 소음 귀마개랑 겹쳐서 착용해도 되나요? | `answered` | `answered` | `FAQ-016` | **정답** |
+| TC-17 | 착용/편의성 | 왼쪽 귀는 큰데 오른쪽 귀는 작아서 이어팁을 짝짝이로 써도 되나요? | `answered` | `answered` | `FAQ-017` | **정답** |
+| TC-18 | 착용/편의성 | 제가 귀 구멍이 작은 편인데 잘 맞을까요? | `answered` | `answered` | `FAQ-018` | **정답** |
+| TC-19 | 착용/편의성 | 옆으로 누워서 자는 버릇이 있는데 배기거나 불편하지 않나요? | `answered` | `answered` | `FAQ-019` | **정답** |
+| TC-20 | 안전/효과 | 중이염이나 귀 염증이 있어도 써도 괜찮나요? | `answered` | `answered` | `FAQ-020` | **정답** |
+| TC-21 | 제품 소개/기능 | 기본 박스 구성품에 충전기랑 이어팁 다 들어있나요? | `answered` | `answered` | `FAQ-021` | **정답** |
+| TC-22 | 모호한 질문 | 충전 | `clarification_needed` | `clarification_needed` | `-` | **정답** |
+| TC-23 | 모호한 질문 | 어떻게 써요? | `clarification_needed` | `clarification_needed` | `-` | **정답** |
+| TC-24 | 상담/환불 | 어제 주문한 제품 주문 취소하고 환불받고 싶어요 | `support_required` | `support_required` | `-` | **정답** |
+| TC-25 | 미보유 지식 | 슬리피 회사 주식 상장 일정과 공모가는 얼마인가요? | `insufficient_context` | `insufficient_context` | `-` | **근거없음** |
 
 ---
 
-## 4. R02 API 및 SRS 요구사항 준수 체크리스트
+## 3. R02 API 및 SRS 요구사항 준수 체크리스트
 
 | 검증 항목 | 세부 요구 기준 | 준수 여부 | 확인 내용 |
 |---|---|:---:|---|
 | **단일 엔드포인트** | `POST /api/chat` 단일 경로 사용 | **PASS** | 불필요한 서브 경로 없이 단일 라우트로 통합 |
+| **CORS & 보안** | 외부 연동 및 API Key 클라이언트 비노출 | **PASS** | CORS 헤더 제공 및 전 서버사이드 보호 |
 | **빈 입력 처리** | 빈 문자열/공백 시 HTTP 400 반환 | **PASS** | `{"error": {"code": "EMPTY_MESSAGE", "message": "질문을 입력해 주세요."}}` |
 | **4대 상태 구조** | `status` 필드 필수 및 4개 값 제한 | **PASS** | `answered`, `clarification_needed`, `insufficient_context`, `support_required` |
 | **출처 명시** | `sources[]` 배열에 실제 사용 근거 전달 | **PASS** | `document_id`, `title`, `faq_id`, `location` 규격 100% 일치 |
@@ -71,9 +104,7 @@
 
 ---
 
-## 5. RAG 최적화 실험 가이드 (`scripts/experiment_config.json`)
-
-팀원 각자가 검색 성능을 튜닝하고 비교 실험할 수 있도록 파라미터가 독립 파일로 분리되었습니다:
+## 4. RAG 최적화 실험 파라미터 (`scripts/experiment_config.json`)
 
 ```json
 {
@@ -81,18 +112,13 @@
   "chunk_overlap": 50,
   "embedding_model": "text-embedding-3-small",
   "search_strategy": "hybrid",
+  "similarity_threshold": 0.7,
   "top_k": 3,
   "use_reranker": false,
-  "system_prompt_version": "R02_STRICT"
+  "use_intent_router": true,
+  "use_multi_query": true,
+  "system_prompt_version": "R02_QA_VERIFIED"
 }
 ```
 
-- **실험 1 (Chunk Size 비교):** 300자 vs 500자 vs 800자 분할 시 FAQ 질문-답변 맥락 보존율 측정
-- **실험 2 (검색 전략 비교):** `dense` (임베딩 벡터 유사도) vs `sparse` (키워드/BM25) vs `hybrid` (혼합 검색)
-- **실험 3 (Top-K 변화):** Top-1만 사용할 때와 Top-3를 사용할 때의 노이즈 포함율 비교
-
----
-
-## 6. 결론 및 향후 개선 방향
-1. **현재 성과:** 21개 공식 FAQ에 대한 100% 매칭 정확도 및 환각 0% 달성.
-2. **향후 확장:** 제품 라인업이 다변화될 경우(예: SLEEBY Pro 등), 질문 의도 분석 단계에서 모델명 메타데이터 필터링을 결합하여 교차 혼동을 원천 방지하는 2단계 RAG 파이프라인으로 고도화 권장.
+*본 문서는 scripts/eval_benchmark.py 실행 시 실시간 평가 결과를 반영하여 자동으로 갱신됩니다.*

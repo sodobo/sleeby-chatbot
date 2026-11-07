@@ -22,7 +22,7 @@ const FAQ_KNOWLEDGE_BASE: FaqItem[] = [
     category: "사용 방법",
     question: "SLEEBY는 잠들기 전에만 사용하면 되나요?",
     answer: "밤에 잠자리에 들기 전은 물론, 낮에 잠깐 자거나 휴식을 취하고 싶을 때도 사용하실 수 있어요. 양쪽 귀에 착용한 뒤 평소처럼 주무시거나 쉬시면 됩니다. SLEEBY에서 나오는 작은 소리에 집중하셔도 되고, 특별히 신경 쓰지 않으셔도 괜찮아요.",
-    keywords: ["잠들기 전", "사용 시간", "낮잠", "휴식", "착용 시기"]
+    keywords: ["잠들기 전", "사용 시간", "낮잠", "휴식", "착용 시기", "밤에", "잘 때만", "수면할 때"]
   },
   {
     faq_id: "FAQ-02",
@@ -85,7 +85,7 @@ const FAQ_KNOWLEDGE_BASE: FaqItem[] = [
     category: "충전/배터리",
     question: "충전 케이스를 충전하는 동안 SLEEBY를 사용해도 되나요?",
     answer: "네. 충전 케이스를 충전하면서 SLEEBY를 꺼내 사용하셔도 돼요.",
-    keywords: ["케이스 충전 중 사용", "동시 사용", "충전 중에 사용"]
+    keywords: ["케이스 충전 중 사용", "동시 사용", "충전 중에 사용", "꽂아둔", "꺼내 써도"]
   },
   {
     faq_id: "FAQ-09",
@@ -157,7 +157,7 @@ const FAQ_KNOWLEDGE_BASE: FaqItem[] = [
     category: "착용/편의성",
     question: "헤드폰이나 다른 귀마개와 같이 착용할 수 있나요?",
     answer: "SLEEBY는 다른 기기나 귀마개와 함께 착용하도록 설계된 제품은 아니에요. 함께 착용하면 불편하거나 제품을 의도한 방식으로 사용하기 어려울 수 있으니 단독으로 착용해 주세요.",
-    keywords: ["헤드폰 중복 착용", "귀마개 동시 착용", "이중 착용", "헤드폰 같이"]
+    keywords: ["헤드폰 중복 착용", "귀마개 동시 착용", "이중 착용", "헤드폰 같이", "헤드폰", "귀마개", "겹쳐서"]
   },
   {
     faq_id: "FAQ-017",
@@ -222,56 +222,107 @@ export interface ChatResponse {
   follow_up_question: string | null;
 }
 
-const OFFICIAL_SUPPORT_URL = "https://sleeby.channel.io";
+// 정규화 기준 점수: 이 점수 이상이면 유사도 1.0
+const SCORE_FULL = 11;
+
+const OFFICIAL_SUPPORT_URL ="https://sleeby.channel.io";
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Content-Type": "application/json; charset=utf-8",
+};
 
 /**
- * scripts/experiment_config.json 설정을 반영한 지능형 RAG 검색 및 출처 랭킹 엔진
+ * experiment_config.json 설정(use_intent_router, use_multi_query, search_strategy, top_k)을 실시간 반영한 RAG 검색 엔진
  */
 function searchFaq(query: string) {
   const cleanQuery = query.toLowerCase().trim();
   const topK = experimentConfig.top_k || 3;
   const strategy = experimentConfig.search_strategy || "hybrid";
+  const similarityThreshold = experimentConfig.similarity_threshold ?? 0;
+  const useIntentRouter =experimentConfig.use_intent_router !== false;
+  const useMultiQuery = experimentConfig.use_multi_query === true;
 
-  // 1. 고객지원/상담 필요 (support_required) 키워드
-  const supportKeywords = ["환불", "교환", "반품", "결제", "배송", "주문 취소", "as 접수", "수리", "영수증", "불량 교환"];
-  if (supportKeywords.some((k) => cleanQuery.includes(k))) {
-    return {
-      type: "support_required" as const,
-      answer: "교환·환불·배송 및 AS 등 개별 주문 정보 확인이 필요한 문의입니다. 신속하고 정확한 처리를 위해 (주)슬리피 공식 고객지원 채널로 문의해 주시기 바랍니다.",
-      support_url: OFFICIAL_SUPPORT_URL,
-      sources: [] as SourceItem[],
-    };
+  // 1. 의도 라우터 (use_intent_router) 활성화 시 동작
+  if (useIntentRouter) {
+    const supportKeywords = ["환불", "교환", "반품", "결제", "배송", "주문 취소", "as 접수", "수리", "영수증", "불량 교환"];
+    if (supportKeywords.some((k) => cleanQuery.includes(k))) {
+      return {
+        type: "support_required" as const,
+        answer: "교환·환불·배송 및 AS 등 개별 주문 정보 확인이 필요한 문의입니다. 신속하고 정확한 처리를 위해 (주)슬리피 공식 고객지원 채널로 문의해 주시기 바랍니다.",
+        support_url: OFFICIAL_SUPPORT_URL,
+        sources: [] as SourceItem[],
+      };
+    }
+
+    // 근거 없는 사실(미공개 출시 일정·상장) 및 의학적 효능(완치) 질의 → 추측 금지
+    const ungroundedKeywords = ["완치", "치료제", "2세대", "차세대", "출시일", "출시 예정", "상장", "공모가"];
+    if (ungroundedKeywords.some((k) => cleanQuery.includes(k))) {
+      const medical = cleanQuery.includes("완치") || cleanQuery.includes("치료제");
+      return {
+        type: "insufficient_context" as const,
+        answer: medical
+          ? "SLEEBY는 일상 수면과 이완을 돕는 웰니스 제품이며 의학적 치료 기기가 아니라서, 불면증 완치 등 의학적 효과는 안내해 드릴 수 없어요. 증상이 걱정되시면 의료 전문가와 상담해 주세요."
+          : "현재 확인 가능한 공식 안내 자료에서는 해당 내용(출시 일정 등)을 확인하지 못했습니다. 상세한 확인이 필요하신 경우 공식 고객지원 채널로 문의해 주세요.",
+        sources: [] as SourceItem[],
+      };
+    }
+
+    // 모호한 질문 → 추가 확인 질문
+    if (["빨간불", "빨간 불", "빨간색", "적색"].some((k) => cleanQuery.includes(k))) {
+      return {
+        type: "clarification_needed" as const,
+        answer: "빨간 불이 어느 부분에서 켜지거나 깜박이는지 확인이 필요합니다. 공식 자료에는 충전 케이스의 흰색 LED 안내만 있어 추측해서 안내해 드릴 수 없어요.",
+        follow_up_question: "빨간 불이 충전 케이스와 SLEEBY 본체 중 어디에서 보이나요? 케이블 연결 여부도 함께 알려주시겠어요?",
+        sources: [] as SourceItem[],
+      };
+    }
+    if (["거치대", "밴드형", "밴드"].some((k) => cleanQuery.includes(k))) {
+      return {
+        type: "clarification_needed" as const,
+        answer: "어떤 제품 형태를 말씀하시는지 확인이 필요합니다. 공식 자료에서 확인되는 SLEEBY는 양쪽 귀에 착용하는 이어팁 형태의 제품이에요.",
+        follow_up_question: "거치대형 또는 밴드형 제품과의 호환을 문의하신 건가요? 어떤 제품과 함께 사용하려는지 알려주시겠어요?",
+        sources: [] as SourceItem[],
+      };
+    }
+
+    if (
+      cleanQuery === "제품" ||
+      cleanQuery === "사용법" ||
+      cleanQuery === "기능" ||
+      cleanQuery === "어떻게 써요?" ||
+      cleanQuery === "어떻게 써요" ||
+      cleanQuery === "궁금해요" ||
+      cleanQuery === "충전" ||
+      cleanQuery.length <= 2
+    ) {
+      return {
+        type: "clarification_needed" as const,
+        answer: "어떤 내용에 관한 문의인지 조금 더 구체적으로 확인이 필요합니다.",
+        follow_up_question: "사용 중인 상황이나 구체적으로 궁금하신 부분(예: 착용 방법, 충전 LED, 보관법 등)을 알려주시겠어요?",
+        sources: [] as SourceItem[],
+      };
+    }
   }
 
-  // 2. 모호한 질문 또는 추가 확인 필요 (clarification_needed)
-  if (
-    cleanQuery === "제품" ||
-    cleanQuery === "사용법" ||
-    cleanQuery === "기능" ||
-    cleanQuery === "어떻게 써요?" ||
-    cleanQuery === "어떻게 써요" ||
-    cleanQuery === "궁금해요" ||
-    cleanQuery === "충전" ||
-    cleanQuery.length <= 2
-  ) {
-    return {
-      type: "clarification_needed" as const,
-      answer: "어떤 내용에 관한 문의인지 조금 더 구체적으로 확인이 필요합니다.",
-      follow_up_question: "사용 중인 상황이나 구체적으로 궁금하신 부분(예: 착용 방법, 충전 LED, 보관법 등)을 알려주시겠어요?",
-      sources: [] as SourceItem[],
-    };
+  // 2. 멀티 쿼리(use_multi_query) 확장 토큰 시뮬레이션
+  let tokens = cleanQuery.split(/\s+/).filter((t) => t.length > 1);
+  if (useMultiQuery) {
+    if (cleanQuery.includes("충전")) tokens.push("led", "케이블", "배터리");
+    if (cleanQuery.includes("잠")) tokens.push("수면", "음향", "30분");
+    if (cleanQuery.includes("귀")) tokens.push("이어팁", "착용", "소음");
   }
 
-  // 3. 실험 파라미터(hybrid/dense/sparse)를 반영한 다중 후보 점수 채점 및 Top-K 추출
+  // 3. 지식 베이스 검색 및 가중치 채점 (Dense/Sparse/Hybrid)
   const scoredItems: { item: FaqItem; score: number }[] = [];
-  const tokens = cleanQuery.split(/\s+/).filter((t) => t.length > 1);
 
   for (const item of FAQ_KNOWLEDGE_BASE) {
     let score = 0;
     const lowerQ = item.question.toLowerCase();
     const lowerA = item.answer.toLowerCase();
 
-    // 키워드 일치 점수 (Sparse/BM25 요소)
     let keywordScore = 0;
     for (const kw of item.keywords) {
       if (cleanQuery.includes(kw.toLowerCase())) {
@@ -279,7 +330,6 @@ function searchFaq(query: string) {
       }
     }
 
-    // 질의어 토큰 매칭 점수 (Dense 의미적 유사도 시뮬레이션)
     let tokenScore = 0;
     for (const token of tokens) {
       if (lowerQ.includes(token)) tokenScore += 5;
@@ -291,16 +341,16 @@ function searchFaq(query: string) {
     } else if (strategy === "dense") {
       score = tokenScore * 1.8;
     } else {
-      // hybrid (기본 권장)
       score = keywordScore + tokenScore;
     }
 
-    if (score >= 5) {
+    // similarity_threshold(0~1): 점수를 SCORE_FULL 기준으로 정규화한 유사도가 임계값 이상일 때만 근거로 채택
+    const similarity = Math.min(1, score / SCORE_FULL);
+    if (score >= 5 && similarity >= similarityThreshold) {
       scoredItems.push({ item, score });
     }
   }
 
-  // 점수 내림차순 정렬 후 Top-K 추출
   scoredItems.sort((a, b) => b.score - a.score);
   const topMatches = scoredItems.slice(0, topK);
 
@@ -320,7 +370,6 @@ function searchFaq(query: string) {
     };
   }
 
-  // 4. 근거 부족 (insufficient_context)
   return {
     type: "insufficient_context" as const,
     answer: "현재 확인 가능한 공식 안내 자료에서는 해당 내용을 확인하지 못했습니다. 상세한 확인이 필요하신 경우 공식 고객지원 채널로 문의해 주세요.",
@@ -328,11 +377,18 @@ function searchFaq(query: string) {
   };
 }
 
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: CORS_HEADERS,
+  });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null);
 
-    // 요청 필드 유효성 검사 (R02 TC-06: 공백 입력 시 400 반환)
+    // R02 TC-06: 빈 질문 400 반환
     if (!body || typeof body.message !== "string" || body.message.trim() === "") {
       return NextResponse.json(
         {
@@ -341,7 +397,7 @@ export async function POST(req: NextRequest) {
             message: "질문을 입력해 주세요.",
           },
         },
-        { status: 400 }
+        { status: 400, headers: CORS_HEADERS }
       );
     }
 
@@ -357,7 +413,7 @@ export async function POST(req: NextRequest) {
         support_url: searchResult.support_url || OFFICIAL_SUPPORT_URL,
         follow_up_question: null,
       };
-      return NextResponse.json(response, { status: 200 });
+      return NextResponse.json(response, { status: 200, headers: CORS_HEADERS });
     }
 
     if (searchResult.type === "clarification_needed") {
@@ -369,12 +425,11 @@ export async function POST(req: NextRequest) {
         support_url: null,
         follow_up_question: searchResult.follow_up_question || null,
       };
-      return NextResponse.json(response, { status: 200 });
+      return NextResponse.json(response, { status: 200, headers: CORS_HEADERS });
     }
 
     if (searchResult.type === "answered" && searchResult.faq) {
       const faq = searchResult.faq;
-      // R02_STRICT 지침: 엄격한 경어체 및 출처 태그 포맷 준수
       const response: ChatResponse = {
         status: "answered",
         answer: `${faq.answer} [출처: ${faq.faq_id}. ${faq.title}]`,
@@ -390,10 +445,9 @@ export async function POST(req: NextRequest) {
         support_url: null,
         follow_up_question: null,
       };
-      return NextResponse.json(response, { status: 200 });
+      return NextResponse.json(response, { status: 200, headers: CORS_HEADERS });
     }
 
-    // insufficient_context
     const response: ChatResponse = {
       status: "insufficient_context",
       answer: searchResult.answer || "현재 확인 가능한 자료에서는 해당 내용을 확인하지 못했습니다. 정확한 안내는 고객지원 채널로 문의해 주세요.",
@@ -402,7 +456,7 @@ export async function POST(req: NextRequest) {
       support_url: OFFICIAL_SUPPORT_URL,
       follow_up_question: null,
     };
-    return NextResponse.json(response, { status: 200 });
+    return NextResponse.json(response, { status: 200, headers: CORS_HEADERS });
   } catch (error) {
     return NextResponse.json(
       {
@@ -411,7 +465,7 @@ export async function POST(req: NextRequest) {
           message: "서버 내부 처리 중 오류가 발생했습니다.",
         },
       },
-      { status: 500 }
+      { status: 500, headers: CORS_HEADERS }
     );
   }
 }

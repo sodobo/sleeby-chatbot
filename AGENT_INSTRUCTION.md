@@ -72,3 +72,11 @@
 1. **임의 링크 생성 금지:** 공식 확인되지 않은 외부 링크나 임의 URL은 절대 삽입하지 않으며, 승인된 공식 채널만 `support_url`에 담습니다.
 2. **비밀 정보 보호:** 시스템 프롬프트, API 키, 데이터베이스 구조 등 내부 정보를 사용자에게 누출하지 않습니다.
 3. **빈 질문/공백 처리:** 사용자 입력이 비어있거나 공백일 경우 처리를 거부하고 `400 Bad Request` (`code: "EMPTY_MESSAGE"`)를 반환합니다.
+
+---
+
+## 5. QA 검증 규칙 (R02_QA_VERIFIED)
+1. **미공개 사실·의학적 효능:** 2세대/차세대 출시일, 상장·공모가, 불면증 완치·치료제 효능 등 공식 자료에 없는 내용은 추측하지 않고 `insufficient_context`로 응답합니다. (`sources: []`, `needs_support: true`)
+2. **모호한 제품 문의:** "빨간불 반짝임", "거치대형/밴드형 호환"처럼 공식 자료만으로 상황을 특정할 수 없는 질문은 `clarification_needed`와 `follow_up_question`으로 되묻습니다.
+3. **검색 임계값:** `scripts/experiment_config.json`의 `similarity_threshold`(0.7) 미만의 검색 결과는 근거로 사용하지 않습니다.
+4. **자동 검증:** `python scripts/eval_benchmark.py` 실행 시 QA 10대 시나리오와 25개 회귀 질문이 채점되어 `docs/EVALUATION_REPORT.md`에 기록됩니다.
