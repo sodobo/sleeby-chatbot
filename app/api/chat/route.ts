@@ -247,6 +247,17 @@ function searchFaq(query: string) {
 
   // 1. 의도 라우터 (use_intent_router) 활성화 시 동작
   if (useIntentRouter) {
+    // 1-0. 인사말: 검색 없이 정형 응답 (status: answered, sources: [])
+    const greetingText = cleanQuery.replace(/[\s!?.~,]+/g, "");
+    const greetings = ["안녕", "안녕하세요", "안녕하십니까", "반가워", "반가워요", "반갑습니다", "하이", "hello", "hi", "처음뵙겠습니다"];
+    if (greetings.includes(greetingText)) {
+      return {
+        type: "greeting" as const,
+        answer: "안녕하세요! (주)슬리피 고객상담 AI입니다. SLEEBY 사용 방법, 충전, 관리·보관 등 궁금하신 점을 편하게 질문해 주세요.",
+        sources: [] as SourceItem[],
+      };
+    }
+
     const supportKeywords = ["환불", "교환", "반품", "결제", "배송", "주문 취소", "as 접수", "수리", "영수증", "불량 교환"];
     if (supportKeywords.some((k) => cleanQuery.includes(k))) {
       return {
@@ -282,8 +293,8 @@ function searchFaq(query: string) {
     if (["거치대", "밴드형", "밴드"].some((k) => cleanQuery.includes(k))) {
       return {
         type: "clarification_needed" as const,
-        answer: "어떤 제품 형태를 말씀하시는지 확인이 필요합니다. 공식 자료에서 확인되는 SLEEBY는 양쪽 귀에 착용하는 이어팁 형태의 제품이에요.",
-        follow_up_question: "거치대형 또는 밴드형 제품과의 호환을 문의하신 건가요? 어떤 제품과 함께 사용하려는지 알려주시겠어요?",
+        answer: "제품 형태(밴드형·거치대형 등)에 따라 사용 방법이 다를 수 있어 정확한 제품을 확인한 뒤 안내해 드릴게요. 공식 자료에서 확인되는 SLEEBY는 양쪽 귀에 착용하는 이어팁 형태의 제품이에요.",
+        follow_up_question: "사용 중이신 슬리피 제품명이나 모델명을 알려주세요.",
         sources: [] as SourceItem[],
       };
     }
@@ -403,6 +414,18 @@ export async function POST(req: NextRequest) {
 
     const { message } = body;
     const searchResult = searchFaq(message);
+
+    if (searchResult.type === "greeting") {
+      const response: ChatResponse = {
+        status: "answered",
+        answer: searchResult.answer,
+        sources: [],
+        needs_support: false,
+        support_url: null,
+        follow_up_question: null,
+      };
+      return NextResponse.json(response, { status: 200, headers: CORS_HEADERS });
+    }
 
     if (searchResult.type === "support_required") {
       const response: ChatResponse = {

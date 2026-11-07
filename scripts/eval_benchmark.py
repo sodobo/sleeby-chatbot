@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 (주)슬리피 AI 고객상담 챗봇 - 팀 공통 답변 품질 평가(Benchmark) 스크립트
-25개 대표/모호/미근거/상담 질문 세트를 실행하여
+27개 대표/인사/모호/미근거/상담 질문 세트를 실행하여
 정답(answered), 추가확인(clarification_needed), 근거부족(insufficient_context), 상담필요(support_required)의
 비율을 docs/EVALUATION_REPORT.md 및 CSV에 자동 기록합니다.
 """
@@ -223,7 +223,7 @@ FAQ_DATA = [
     }
 ]
 
-# 팀 공통 25개 평가 질문 세트 (대표, 모호, 미근거, 상담)
+# 팀 공통 27개 평가 질문 세트 (대표, 인사, 모호, 미근거, 상담)
 BENCHMARK_DATASET = [
     # 1. 정상 답변 (answered)
     { "id": "TC-01", "question": "SLEEBY는 밤에 잘 때만 써야 하나요?", "expected_status": "answered", "expected_faq": "FAQ-01", "category": "사용 방법" },
@@ -256,6 +256,8 @@ BENCHMARK_DATASET = [
     { "id": "TC-24", "question": "어제 주문한 제품 주문 취소하고 환불받고 싶어요", "expected_status": "support_required", "expected_faq": None, "category": "상담/환불" },
 
     # 4. 근거 부재 / 답변 불가 (insufficient_context)
+    { "id": "TC-26", "question": "안녕하세요", "expected_status": "answered", "expected_faq": None, "category": "인사말" },
+    { "id": "TC-27", "question": "반가워요!", "expected_status": "answered", "expected_faq": None, "category": "인사말" },
     { "id": "TC-25", "question": "슬리피 회사 주식 상장 일정과 공모가는 얼마인가요?", "expected_status": "insufficient_context", "expected_faq": None, "category": "미보유 지식" }
 ]
 
@@ -276,6 +278,17 @@ def local_search_match(query, faqs):
         }
 
     if use_router:
+        import re as _re
+        greet = _re.sub(r"[\s!?.~,]+", "", clean_q)
+        if greet in ["안녕", "안녕하세요", "안녕하십니까", "반가워", "반가워요", "반갑습니다", "하이", "hello", "hi", "처음뵙겠습니다"]:
+            return {
+                "status": "answered",
+                "answer": "안녕하세요! (주)슬리피 고객상담 AI입니다. 궁금하신 점을 편하게 질문해 주세요.",
+                "sources": [],
+                "needs_support": False,
+                "support_url": None,
+                "follow_up_question": None
+            }
         # route.ts 와 동일: 근거 없는 사실/의학적 효능 → insufficient_context
         if any(k in clean_q for k in ["완치", "치료제", "2세대", "차세대", "출시일", "출시 예정", "상장", "공모가"]):
             return {
@@ -302,7 +315,7 @@ def local_search_match(query, faqs):
                 "sources": [],
                 "needs_support": False,
                 "support_url": None,
-                "follow_up_question": "어떤 제품과 함께 사용하려는지 알려주시겠어요?"
+                "follow_up_question": "사용 중이신 슬리피 제품명이나 모델명을 알려주세요."
             }
 
     if use_router and (clean_q in ["충전", "제품", "사용법", "기능", "궁금해요", "어떻게 써요?", "어떻게 써요"] or len(clean_q) <= 2):
@@ -476,6 +489,12 @@ def run_qa_suite():
                  ["FAQ-07", "FAQ-08", "FAQ-09"])
     check_status("QA-03", "빨간불 반짝임 충전 문의", "충전할 때 빨간불이 반짝여요", "clarification_needed")
     check_status("QA-04", "거치대형/밴드형 호환 문의", "거치대형이나 밴드형도 호환되나요?", "clarification_needed")
+    _h, _b, _m = post_chat("거치대형이나 밴드형도 호환되나요?")
+    if _b.get("follow_up_question") != "사용 중이신 슬리피 제품명이나 모델명을 알려주세요.":
+        rows[-1] = rows[-1][:4] + ("FAIL", rows[-1][5] + " follow_up_question 문구 불일치")
+    check_status("QA-11", "인사말 (검색 없이 정형 응답)", "안녕", "answered")
+    if rows[-1][4] == "PASS" and post_chat("안녕")[1].get("sources"):
+        rows[-1] = rows[-1][:4] + ("FAIL", "인사말에 sources 포함")
     check_status("QA-05", "2세대 출시일 문의", "SLEEBY 2세대 출시일이 언제인가요?", "insufficient_context")
     check_status("QA-06", "불면증 100% 완치 문의", "SLEEBY 쓰면 불면증이 100% 완치되나요?", "insufficient_context")
     check_status("QA-07", "구매 환불/교환 문의", "구매한 제품 환불이나 교환하고 싶어요", "support_required")
@@ -570,7 +589,7 @@ def run_benchmark():
     qa_md = "| ID | 시나리오 | 기대 결과 | 실제 결과 | 판정 | 비고 |\n|---|---|---|---|:---:|---|\n"
     for r in qa_rows:
         qa_md += f"| {r[0]} | {r[1]} | {r[2]} | {r[3]} | **{r[4]}** | {r[5]} |\n"
-    qa_md += f"\n> ✅ **QA 10대 시나리오 통과: {qa_pass}/{len(qa_rows)}**"
+    qa_md += f"\n> ✅ **QA 시나리오 통과: {qa_pass}/{len(qa_rows)}**"
 
     total = len(BENCHMARK_DATASET)
     ans_pct = (status_counts["answered"] / total) * 100
@@ -592,7 +611,7 @@ def run_benchmark():
 | **평가 기준일** | 2026-11-07 (KST) |
 | **연계 명세** | Sleepy API 명세서 R02 / Sleepy 요구사항 명세서 R02 / 11.07 RAG 가이드라인 |
 | **평가 대상** | `POST /api/chat` (Vercel 배포 및 RAG 하이브리드 검색 파이프라인) |
-| **평가 데이터셋** | 총 {total}개 테스트 질의 (대표 질문 21건 + 모호 질문 2건 + 상담 1건 + 미근거 1건) |
+| **평가 데이터셋** | 총 {total}개 테스트 질의 (대표 FAQ 21건 + 인사 2건 + 모호 2건 + 상담 1건 + 미근거 1건) |
 
 ---
 
@@ -622,13 +641,13 @@ def run_benchmark():
 
 ---
 
-## 2. 리드 QA 10대 핵심 시나리오 (자동 채점)
+## 2. 리드 QA 핵심 시나리오 (자동 채점)
 
 {qa_md}
 
 ---
 
-## 2-2. 25개 테스트 케이스 전체 상세 결과표 (자동 생성)
+## 2-2. {total}개 테스트 케이스 전체 상세 결과표 (자동 생성)
 
 | ID | 카테고리 | 고객 질문 | 기대 상태 | 실제 반환 상태 | 매칭 출처 | 판정 |
 |---|---|---|---|---|---|---|
