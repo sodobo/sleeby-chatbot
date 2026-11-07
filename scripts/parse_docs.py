@@ -1,0 +1,291 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+(주)슬리피 RAG 파이프라인 - 문서 파싱 및 Chunking 실험 스크립트
+'11.07 RAG 개인/공통 가이드라인' 준수:
+팀원 각자가 아래 파라미터를 변경하여 Chunking 및 검색 전략을 비교 실험할 수 있습니다.
+"""
+
+import os
+import json
+
+# ==============================================================================
+# [개인별 RAG 실험 파라미터 조절 영역]
+# ==============================================================================
+CHUNK_SIZE = 500             # 청크 글자 수 (예: 200, 300, 500, 1000)
+CHUNK_OVERLAP = 50           # 인접 청크 간 중복 글자 수 (예: 0, 30, 50, 100)
+EMBEDDING_MODEL = "text-embedding-3-small"  # 임베딩 모델 (예: text-embedding-3-small, text-embedding-3-large)
+SEARCH_STRATEGY = "hybrid"   # 검색 전략: "dense", "sparse", "hybrid"
+# ==============================================================================
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUTPUT_DIR = os.path.join(BASE_DIR, "data")
+OUTPUT_JSON = os.path.join(OUTPUT_DIR, f"faq_chunks_{SEARCH_STRATEGY}_{CHUNK_SIZE}_{CHUNK_OVERLAP}.json")
+OUTPUT_JSONL = os.path.join(OUTPUT_DIR, f"faq_chunks_{SEARCH_STRATEGY}_{CHUNK_SIZE}_{CHUNK_OVERLAP}.jsonl")
+
+# 공식 승인 21개 FAQ 원본 데이터셋
+RAW_FAQ_LIST = [
+    {
+        "faq_id": "FAQ-01",
+        "document_id": "DOC-FAQ-001",
+        "title": "SLEEBY는 잠들기 전에만 사용하면 되나요?",
+        "category": "사용 방법",
+        "question": "SLEEBY는 잠들기 전에만 사용하면 되나요?",
+        "answer": "밤에 잠자리에 들기 전은 물론, 낮에 잠깐 자거나 휴식을 취하고 싶을 때도 사용하실 수 있어요. 양쪽 귀에 착용한 뒤 평소처럼 주무시거나 쉬시면 됩니다. SLEEBY에서 나오는 작은 소리에 집중하셔도 되고, 특별히 신경 쓰지 않으셔도 괜찮아요.",
+        "keywords": ["잠들기 전", "사용 시간", "낮잠", "휴식", "착용 시기"]
+    },
+    {
+        "faq_id": "FAQ-02",
+        "document_id": "DOC-FAQ-002",
+        "title": "잠든 뒤에도 계속 착용하고 있어도 괜찮나요?",
+        "category": "사용 방법",
+        "question": "잠든 뒤에도 계속 착용하고 있어도 괜찮나요?",
+        "answer": "네. 양이성 음향은 전원이 켜진 뒤 약 30분이 지나면 자동으로 꺼져요. 30분 안에 잠드셨다면 착용한 채로 계속 주무셔도 괜찮습니다. 불편하면 빼셔도 되니, 편안한 쪽으로 선택해 주세요.",
+        "keywords": ["착용 지속", "30분", "자동 꺼짐", "수면 중 착용", "계속 착용"]
+    },
+    {
+        "faq_id": "FAQ-03",
+        "document_id": "DOC-FAQ-003",
+        "title": "사용하다가 중간에 빼도 되나요?",
+        "category": "사용 방법",
+        "question": "사용하다가 중간에 빼도 되나요?",
+        "answer": "네. 사용 중 불편하거나 빼고 싶을 때는 언제든 빼셔도 됩니다.",
+        "keywords": ["중간에 빼기", "제거", "사용 중지"]
+    },
+    {
+        "faq_id": "FAQ-04",
+        "document_id": "DOC-FAQ-004",
+        "title": "잠이 들지 않으면 다시 착용해도 되나요?",
+        "category": "사용 방법",
+        "question": "잠이 들지 않으면 다시 착용해도 되나요?",
+        "answer": "네. 30분 후 SLEEBY 전원이 자동으로 꺼진 뒤에도 잠이 들지 않거나 졸린 느낌이 없다면 다시 사용하셔도 돼요. SLEEBY를 충전 케이스에 넣었다가 1~2초 후 다시 꺼내 착용하면 양이성 음향이 다시 30분 동안 재생됩니다.",
+        "keywords": ["재착용", "다시 사용", "재생", "케이스에 넣었다 꺼내기"]
+    },
+    {
+        "faq_id": "FAQ-05",
+        "document_id": "DOC-FAQ-005",
+        "title": "낮잠을 잘 때 사용해도 되나요?",
+        "category": "사용 방법",
+        "question": "낮잠을 잘 때 사용해도 되나요?",
+        "answer": "네. 낮잠이나 휴식을 취할 때도 사용하실 수 있어요. 편안한 상태에서 착용해 주세요.",
+        "keywords": ["낮잠", "휴식", "낮에 사용"]
+    },
+    {
+        "faq_id": "FAQ-06",
+        "document_id": "DOC-FAQ-006",
+        "title": "매일 사용해도 괜찮나요?",
+        "category": "안전/효과",
+        "question": "매일 사용해도 괜찮나요?",
+        "answer": "네. 착용감에 불편함이 없다면 밤이나 일상에서 필요할 때 반복해서 사용하셔도 괜찮아요. 양이성 음향에 대한 반응은 사람마다 다를 수 있으며, 사용 경험에도 개인차가 있을 수 있습니다.",
+        "keywords": ["매일 사용", "반복 사용", "자주 사용", "부작용"]
+    },
+    {
+        "faq_id": "FAQ-07",
+        "document_id": "DOC-FAQ-007",
+        "title": "충전이 끝나면 LED가 어떻게 표시되나요?",
+        "category": "충전/배터리",
+        "question": "충전이 끝나면 LED가 어떻게 표시되나요?",
+        "answer": "케이스를 충전하는 동안에는 흰색 LED가 깜박이고, 충전이 완료되면 흰색 LED가 계속 켜져 있어요.",
+        "keywords": ["충전 완료", "LED", "불빛", "흰색 LED", "깜박임"]
+    },
+    {
+        "faq_id": "FAQ-08",
+        "document_id": "DOC-FAQ-008",
+        "title": "충전 케이스를 충전하는 동안 SLEEBY를 사용해도 되나요?",
+        "category": "충전/배터리",
+        "question": "충전 케이스를 충전하는 동안 SLEEBY를 사용해도 되나요?",
+        "answer": "네. 충전 케이스를 충전하면서 SLEEBY를 꺼내 사용하셔도 돼요.",
+        "keywords": ["케이스 충전 중 사용", "동시 사용"]
+    },
+    {
+        "faq_id": "FAQ-09",
+        "document_id": "DOC-FAQ-009",
+        "title": "충전 케이스를 충전하면서 SLEEBY도 충전할 수 있나요?",
+        "category": "충전/배터리",
+        "question": "충전 케이스를 충전하면서 SLEEBY도 충전할 수 있나요?",
+        "answer": "네. 충전 케이스에 케이블을 연결해 충전하는 중에도, 케이블을 연결하지 않은 상태에서도 SLEEBY를 케이스에 넣으면 충전할 수 있어요.",
+        "keywords": ["동시 충전", "본체 충전", "케이스 충전"]
+    },
+    {
+        "faq_id": "FAQ-010",
+        "document_id": "DOC-FAQ-010",
+        "title": "이어팁은 어떻게 교체하나요?",
+        "category": "관리/보관",
+        "question": "이어팁은 어떻게 교체하나요?",
+        "answer": "이어팁을 SLEEBY 본체에서 조심스럽게 분리한 뒤, 사용할 크기의 이어팁을 본체에 맞춰 끼워 주세요. 너무 세게 잡아당기거나 비틀지 않도록 주의해 주세요.",
+        "keywords": ["이어팁 교체", "이어팁 분리", "이어팁 끼우기"]
+    },
+    {
+        "faq_id": "FAQ-011",
+        "document_id": "DOC-FAQ-011",
+        "title": "SLEEBY 본체는 어떻게 청소하면 되나요?",
+        "category": "관리/보관",
+        "question": "SLEEBY 본체는 어떻게 청소하면 되나요?",
+        "answer": "SLEEBY는 방수 기능이 없어요. 흐르는 물에 씻거나 물에 담그면 고장 날 수 있으니 피해주세요. 안경을 닦듯이 세척액이나 물티슈를 묻혀 닦는 방법은 괜찮습니다.",
+        "keywords": ["청소", "세척", "방수", "물티슈", "소독"]
+    },
+    {
+        "faq_id": "FAQ-012",
+        "document_id": "DOC-FAQ-012",
+        "title": "사용하지 않을 때는 어떻게 보관하는 게 좋나요?",
+        "category": "관리/보관",
+        "question": "사용하지 않을 때는 어떻게 보관하는 게 좋나요?",
+        "answer": "사용하지 않을 때는 본체를 충전 케이스에 넣어 보관해 주세요. 습기가 많거나 온도가 높은 곳은 피해 주세요.",
+        "keywords": ["보관", "케이스 보관", "습기", "보관 방법"]
+    },
+    {
+        "faq_id": "FAQ-013",
+        "document_id": "DOC-FAQ-013",
+        "title": "여행할 때 비행기나 기차 안에서 사용해도 되나요?",
+        "category": "착용/편의성",
+        "question": "여행할 때 비행기나 기차 안에서 사용해도 되나요?",
+        "answer": "네. 사용하셔도 돼요. 주변이 시끄러우면 SLEEBY의 양이성 음향이 잘 들리지 않을 수 있지만, 소리가 또렷하게 들리지 않더라도 착용해 사용하실 수 있어요. 다만 안내 방송이나 안전 안내를 들어야 하는 상황에서는 사용을 피해 주세요.",
+        "keywords": ["비행기", "기차", "여행", "대중교통", "기내 사용"]
+    },
+    {
+        "faq_id": "FAQ-014",
+        "document_id": "DOC-FAQ-014",
+        "title": "잠귀가 밝은 편인데, 주변 소리가 들리나요?",
+        "category": "제품 소개/기능",
+        "question": "잠귀가 밝은 편인데, 주변 소리가 들리나요?",
+        "answer": "SLEEBY에는 액티브 노이즈 캔슬링 기능이 없고, 외부 소리를 완전히 차단하는 제품도 아니에요. 일반 귀마개를 착용했을 때처럼 주변 소리가 작게 들릴 수 있으며, 소리가 들리는 정도는 착용 상태와 개인차에 따라 달라질 수 있습니다.",
+        "keywords": ["노이즈 캔슬링", "차음", "주변 소리", "소음 차단", "ANC"]
+    },
+    {
+        "faq_id": "FAQ-015",
+        "document_id": "DOC-FAQ-015",
+        "title": "음악이나 오디오북을 들으면서 함께 사용할 수 있나요?",
+        "category": "제품 소개/기능",
+        "question": "음악이나 오디오북을 들으면서 함께 사용할 수 있나요?",
+        "answer": "SLEEBY는 다른 기기와 연결해 음악이나 오디오북을 재생하는 제품이 아니에요. 내장된 양이성 음향을 단독으로 사용해 주세요.",
+        "keywords": ["음악 재생", "오디오북", "블루투스 스피커", "이어폰 기능"]
+    },
+    {
+        "faq_id": "FAQ-016",
+        "document_id": "DOC-FAQ-016",
+        "title": "헤드폰이나 다른 귀마개와 같이 착용할 수 있나요?",
+        "category": "착용/편의성",
+        "question": "헤드폰이나 다른 귀마개와 같이 착용할 수 있나요?",
+        "answer": "SLEEBY는 다른 기기나 귀마개와 함께 착용하도록 설계된 제품은 아니에요. 함께 착용하면 불편하거나 제품을 의도한 방식으로 사용하기 어려울 수 있으니 단독으로 착용해 주세요.",
+        "keywords": ["헤드폰 중복 착용", "귀마개 동시 착용", "이중 착용"]
+    },
+    {
+        "faq_id": "FAQ-017",
+        "document_id": "DOC-FAQ-017",
+        "title": "양쪽 귀의 크기가 다른데, 이어팁을 서로 다른 크기로 사용해도 되나요?",
+        "category": "착용/편의성",
+        "question": "양쪽 귀의 크기가 다른데, 이어팁을 서로 다른 크기로 사용해도 되나요?",
+        "answer": "네. 좌우 귀에 잘 맞는 크기가 다르다면 각 귀에 맞는 이어팁을 따로 사용하셔도 돼요. 다만 SLEEBY 본체의 ‘L/R’ 표시는 올바르게 맞춰 착용해 주세요.",
+        "keywords": ["양쪽 귀 크기", "이어팁 다른 크기", "좌우 비대칭", "L/R"]
+    },
+    {
+        "faq_id": "FAQ-018",
+        "document_id": "DOC-FAQ-018",
+        "title": "귀가 작은 편인데 잘 맞을까요?",
+        "category": "착용/편의성",
+        "question": "귀가 작은 편인데 잘 맞을까요?",
+        "answer": "귀 모양과 크기는 사람마다 달라 착용감에 차이가 있을 수 있어요. 동봉된 S/M/L 이어팁 중 귀에 편안하게 맞는 크기를 선택해 주세요.",
+        "keywords": ["작은 귀", "크기 선택", "S/M/L 이어팁", "착용감"]
+    },
+    {
+        "faq_id": "FAQ-019",
+        "document_id": "DOC-FAQ-019",
+        "title": "잠잘 때 옆으로 누워도 불편하지 않나요?",
+        "category": "착용/편의성",
+        "question": "잠잘 때 옆으로 누워도 불편하지 않나요?",
+        "answer": "착용감은 귀 모양과 자세에 따라 다를 수 있어요. 옆으로 누웠을 때 불편하다면 착용 위치를 조정하거나 잠시 빼 주세요.",
+        "keywords": ["옆으로 눕기", "옆잠", "수면 자세", "통증", "눌림"]
+    },
+    {
+        "faq_id": "FAQ-020",
+        "document_id": "DOC-FAQ-020",
+        "title": "귀 질환이 있거나 귀가 민감한 사람도 사용할 수 있나요?",
+        "category": "안전/효과",
+        "question": "귀 질환이 있거나 귀가 민감한 사람도 사용할 수 있나요?",
+        "answer": "귀에 통증이나 질환이 있거나 착용 중 불편함이 느껴지면 사용을 중단해 주세요. 사용해도 괜찮을지 걱정되신다면 의료 전문가와 상담해 주세요.",
+        "keywords": ["귀 질환", "이명", "중이염", "외이도염", "의료 전문가", "의사 상담"]
+    },
+    {
+        "faq_id": "FAQ-021",
+        "document_id": "DOC-FAQ-021",
+        "title": "구성품에는 어떤 것들이 들어 있나요?",
+        "category": "제품 소개/기능",
+        "question": "구성품에는 어떤 것들이 들어 있나요?",
+        "answer": "기본 구성품에는 SLEEBY 본체, 충전 케이스, USB-C 충전 케이블, S/M/L 이어팁, 사용 설명서 등이 포함되어 있어요.",
+        "keywords": ["구성품", "패키지", "기본 구성", "충전 케이블", "설명서"]
+    }
+]
+
+
+def chunk_text(text: str, chunk_size: int, chunk_overlap: int):
+    """슬라이딩 윈도우 기반 텍스트 분할 (Chunking) 함수"""
+    if len(text) <= chunk_size:
+        return [text]
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunk = text[start:end]
+        chunks.append(chunk)
+        if end >= len(text):
+            break
+        start += chunk_size - chunk_overlap
+    return chunks
+
+
+def build_chunks(faq_list):
+    """FAQ 원본 데이터를 지정된 파라미터로 청킹하고 메타데이터를 보존하는 파이프라인"""
+    all_chunks = []
+    print(f"[*] FAQ {len(faq_list)}개 항목 파싱 및 청킹 시작...")
+    print(f"    - CHUNK_SIZE: {CHUNK_SIZE}")
+    print(f"    - CHUNK_OVERLAP: {CHUNK_OVERLAP}")
+    print(f"    - EMBEDDING_MODEL: {EMBEDDING_MODEL}")
+    print(f"    - SEARCH_STRATEGY: {SEARCH_STRATEGY}")
+
+    for item in faq_list:
+        full_content = (
+            f"질문: {item['question']}\n"
+            f"답변: {item['answer']}\n"
+            f"카테고리: {item['category']}\n"
+            f"키워드: {', '.join(item['keywords'])}"
+        )
+        text_chunks = chunk_text(full_content, CHUNK_SIZE, CHUNK_OVERLAP)
+
+        for idx, chunk_text_content in enumerate(text_chunks):
+            chunk_obj = {
+                "chunk_id": f"{item['faq_id']}_c{idx+1}",
+                "document_id": item["document_id"],
+                "faq_id": item["faq_id"],
+                "title": item["title"],
+                "category": item["category"],
+                "chunk_index": idx + 1,
+                "total_chunks_in_doc": len(text_chunks),
+                "content": chunk_text_content,
+                "keywords": item["keywords"],
+                "embedding_model": EMBEDDING_MODEL,
+                "search_strategy": SEARCH_STRATEGY,
+            }
+            all_chunks.append(chunk_obj)
+
+    return all_chunks
+
+
+def save_chunks(chunks):
+    """결과 JSON 및 JSONL 저장"""
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
+        json.dump(chunks, f, ensure_ascii=False, indent=2)
+
+    with open(OUTPUT_JSONL, "w", encoding="utf-8") as f:
+        for chunk in chunks:
+            f.write(json.dumps(chunk, ensure_ascii=False) + "\n")
+
+    print(f"[+] 총 {len(chunks)}개 청크 생성 완료!")
+    print(f"    - JSON 저장: {OUTPUT_JSON}")
+    print(f"    - JSONL 저장: {OUTPUT_JSONL}")
+
+
+if __name__ == "__main__":
+    chunks = build_chunks(RAW_FAQ_LIST)
+    save_chunks(chunks)
