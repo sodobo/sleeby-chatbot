@@ -1,0 +1,21 @@
+너는 (주)슬리피 AI 고객상담 챗봇 프로젝트의 리드 개발자야.
+기존 R02 RAG 챗봇 파이프라인에 추가로 100% 무료로 구현 가능한 '대화형 문의/AS 접수 폼 모듈'과 '멀티모달(이미지 분석) 지원 챗봇 모듈'을 추가해 줘.
+
+[1. app/components/SupportFormModal.tsx 생성]
+- status가 'support_required'이거나 답변 하단 '1:1 문의하기' 클릭 시 열리는 모달 컴포넌트
+- 이름, 연락처, 제품명, 문의 유형(A/S, 환불, 제품 사용법), 문의 내용 입력 폼 작성
+- 제출 시 POST /api/support 로 데이터 전송 및 완료 메시지 챗봇 대화창에 자동 출력
+
+[2. app/api/support/route.ts 생성]
+- POST 요청으로 접수된 1:1 문의 데이터를 받아 정상 처리 메시지를 반환하는 Mock API 엔드포인트 구현 (비용 $0)
+
+[3. app/api/vision/route.ts & ImageUploadPreview.tsx 생성]
+- 사용자가 제품 상태/고장 사진을 업로드할 수 있는 UI 컴포넌트 작성
+- 무료 API (Groq LLaMA-3.2-Vision 또는 Gemini Flash API Key 환경변수 사용)를 호출하여 제품 상태 및 불빛 신호를 해석하는 이미지 분석 API 구현
+- API Key가 없을 경우 목업 분석 결과("제품 LED 충전 표시등 빨간색 점멸 감지: 충전 케이블 단선 가능성 있음")를 반환하도록 안전장치 구현
+
+[4. docs/ADVANCED_CHATBOT_EXPERIMENTS.md 작성]
+- 무료(Free Tier) 기반 챗봇 확장 모델 4가지의 기능, 기술 스택, 비용 비교표 정리
+- 소액 비용(1~2만원) 투자 시 적용 가능한 GPT-4o Vision 및 Serverless Vector DB 확장 시나리오 정리
+
+위 파일들과 코드를 기존 프로젝트 구조를 깨뜨리지 않게 추가로 바로 생성해 줘.

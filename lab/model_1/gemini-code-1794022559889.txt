@@ -1,0 +1,16 @@
+너는 (주)슬리피 AI 고객상담 프로젝트의 리드 개발자야.
+기존 단순 RAG를 확장하여, 질문 의도에 따라 도구를 스스로 선택해 실행하는 'Agentic RAG 챗봇' 엔드포인트를 추가해줘.
+
+[1. 신규 백엔드 API 생성: app/api/chat-agent/route.ts]
+- R02 명세 규격(status, answer, sources, needs_support 등)을 유지하되, 내부적으로 Agent Decision Loop를 구성해줘.
+- 에이전트가 사용할 3가지 내부 도구(Tools) 정의:
+  1. search_sleepy_faq(query): FAQ 및 제품 문서 Vector DB 검색
+  2. request_human_support(reason): 개별 1:1 상담 및 AS 연결 안내 반환
+  3. recommend_product(user_symptom): 수면 상태에 따른 슬리피 제품 추천
+- 에이전트 지침: 질문을 분석해 어떤 도구를 쓸지 판단하고, 최종 답변과 함께 어떤 도구를 사용했는지 'used_tool' 메타데이터를 반환하도록 작성해줘.
+
+[2. 프론트엔드 연결: app/page.tsx UI 보완]
+- 상단에 '기본 RAG 모드'와 'AI 에이전트 모드'를 전환할 수 있는 토글 탭 버튼 추가
+- 에이전트 모드일 때는 답변 상단에 [🤖 실행된 AI 도구: Vector DB 검색]과 같이 에이전트의 사고 과정을 보여주는 배지 표시
+
+위 코드를 무료로 테스트할 수 있도록 작성해줘.

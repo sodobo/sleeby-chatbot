@@ -40,3 +40,6 @@ venv/
 source/
 design/
 faq_extracted/
+
+# Build info
+*.tsbuildinfo
